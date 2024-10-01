@@ -4,7 +4,6 @@ use serde_json::json;
 use sha2::{Digest, Sha256};
 use std::fs;
 use std::process::Command;
-use tokio;
 use tokio::time::{sleep, Duration};
 
 // Struct for deserializing TOML config
