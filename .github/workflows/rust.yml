@@ -1,0 +1,35 @@
+name: Rust
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: "-Dwarnings"
+
+jobs:
+  build:
+
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+    - name: Lint
+      working-directory: ./check-pjsip-state
+      run: cargo fmt --check
+    - name: Clippy
+      working-directory: ./check-pjsip-state
+      run: cargo clippy --all-targets --all-features
+    - name: Build in debug
+      working-directory: ./check-pjsip-state
+      run: cargo build --verbose
+    - name: Run tests
+      working-directory: ./check-pjsip-state
+      run: cargo test --verbose
+    - name: Build in release
+      working-directory: ./check-pjsip-state
+      run: cargo build --release
