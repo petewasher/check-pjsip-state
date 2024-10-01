@@ -1,3 +1,4 @@
+use regex::Regex;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -5,7 +6,6 @@ use sha2::{Digest, Sha256};
 use std::fs;
 use std::process::Command;
 use tokio::time::{sleep, Duration};
-use regex::Regex;
 
 // Struct for deserializing TOML config
 #[derive(Deserialize, Debug, PartialEq)]
@@ -49,9 +49,12 @@ fn get_pjsip_endpoints(output: &str) -> EndpointsData {
             let channels = captures.get(3).unwrap().as_str().to_string();
 
             // Add the parsed data to the endpoints vector
-            endpoints.push(Endpoint { endpoint, state, channels });
-        }
-        else {
+            endpoints.push(Endpoint {
+                endpoint,
+                state,
+                channels,
+            });
+        } else {
             println!("Failed to parse line: {}", line);
         }
     }
