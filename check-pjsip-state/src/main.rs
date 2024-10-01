@@ -1,9 +1,9 @@
-use std::process::Command;
-use std::fs;
+use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use sha2::{Digest, Sha256};
-use reqwest::Client;
+use std::fs;
+use std::process::Command;
 use tokio;
 use tokio::time::{sleep, Duration};
 
@@ -77,10 +77,7 @@ async fn post_to_slack(webhook_url: &str, message: &str) {
         "text": message,
     });
 
-    let response = client.post(webhook_url)
-        .json(&payload)
-        .send()
-        .await;
+    let response = client.post(webhook_url).json(&payload).send().await;
 
     match response {
         Ok(_) => println!("Message sent to Slack"),
@@ -90,8 +87,7 @@ async fn post_to_slack(webhook_url: &str, message: &str) {
 
 // Function to read the config file
 fn read_config() -> Config {
-    let config_content = fs::read_to_string("config.toml")
-        .expect("Failed to read config.toml");
+    let config_content = fs::read_to_string("config.toml").expect("Failed to read config.toml");
     toml::from_str(&config_content).expect("Failed to parse config.toml")
 }
 
