@@ -1,0 +1,4 @@
+sleep_time_seconds = 60
+
+[slack]
+webhook_url = "https://hooks.slack.com/services/YOUR/WEBHOOK/URL"
