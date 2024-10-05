@@ -1,11 +1,10 @@
 use regex::Regex;
-use reqwest::Client;
 use serde::{Deserialize, Serialize};
-use serde_json::json;
 use sha2::{Digest, Sha256};
 use std::fs;
 use std::process::Command;
 use tokio::time::{sleep, Duration};
+use slack_morphism::prelude::*;
 
 // Struct for deserializing TOML config
 #[derive(Deserialize, Debug, PartialEq)]
@@ -16,7 +15,7 @@ struct Config {
 
 #[derive(Deserialize, Debug, PartialEq)]
 struct SlackConfig {
-    webhook_url: String,
+    api_token: String,
 }
 
 // Define an endpoint structure for deserialization
@@ -70,43 +69,83 @@ fn calculate_hash(data: &EndpointsData) -> String {
     format!("{:x}", hasher.finalize())
 }
 
-// Function to post a message to Slack webhook
-async fn post_to_slack(webhook_url: &str, message: &str) {
-    let client = Client::new();
-    let payload = json!({
-        "text": message,
-    });
-
-    let response = client.post(webhook_url).json(&payload).send().await;
-
-    match response {
-        Ok(_) => println!("Message sent to Slack"),
-        Err(e) => eprintln!("Failed to send message to Slack: {}", e),
-    }
-}
-
 // Function to read the config file
 fn read_config(file_content: &str) -> Config {
     toml::from_str(file_content).expect("Failed to parse config.toml")
 }
 
+async fn slack_send_message(app_token: &str, the_message: &str) -> Result<(), Box<dyn std::error::Error + Send + Sync>>
+{
+    let client = SlackClient::new(SlackClientHyperConnector::new()?);
+
+    // Create our Slack API token
+    let token_value: SlackApiTokenValue = app_token.into();
+    let token: SlackApiToken = SlackApiToken::new(token_value);
+    
+    // Create a Slack session with this token
+    // A session is just a lightweight wrapper around your token
+    // not to specify it all the time for series of calls.
+    let session = client.open_session(&token);
+    
+    // Make your first API call (which is `api.test` here)
+    let _: SlackApiTestResponse = session
+            .api_test(&SlackApiTestRequest::new().with_foo("Test".into()))
+            .await?;
+
+    // Send a simple text message
+    let post_chat_req =
+        SlackApiChatPostMessageRequest::new("#general".into(),
+               SlackMessageContent::new().with_text(the_message.into())
+        );
+
+    let _ = session.chat_post_message(&post_chat_req).await?;
+
+    Ok(())
+}
+
 // The main function that checks the endpoints periodically and posts to Slack on changes
 #[tokio::main]
 async fn main() {
-    // Read the configuration file
-    let config_content = fs::read_to_string("config.toml").expect("Failed to read config.toml");
-    let config = read_config(&config_content);
 
+    // Collect the config filename from the command line arguments
+    let args: Vec<String> = std::env::args().collect();
+    if args.len() < 2 {
+        eprintln!("Usage: check-pjsip-state <config_file>");
+        std::process::exit(1);
+    }
+
+    // Read the configuration file
+    let config_content = fs::read_to_string(&args[1]).expect("Failed to read config.toml");
+    let config = read_config(&config_content);
+    
+    match slack_send_message(&config.slack.api_token, "check-pjsip-started").await {
+        Ok(_) => println!("Message sent to Slack"),
+        Err(e) => eprintln!("Failed to send message to Slack: {}", e),
+    };
+    
     // Store the hash of the previous data for change detection
     let mut last_hash: Option<String> = None;
 
     loop {
         // Run the asterisk command and get the current pjsip endpoints output
-        let output = Command::new("asterisk")
+        let output = match Command::new("asterisk")
             .arg("-rx")
             .arg("pjsip list endpoints")
-            .output()
-            .expect("failed to execute process");
+            .output() {
+            Ok(output) => output,
+            Err(e) => {
+
+                eprintln!("Failed to run the command: {}", e);
+                
+                // Send a slack message and abort
+                match slack_send_message(&config.slack.api_token, "Failed to run the command").await {
+                    Ok(_) => println!("Message sent to Slack"),
+                    Err(e) => eprintln!("Failed to send message to Slack: {}", e),
+                };
+
+                std::process::exit(1);
+            }
+        };
 
         let stdout = String::from_utf8_lossy(&output.stdout);
 
@@ -118,7 +157,11 @@ async fn main() {
         if last_hash.is_none() || last_hash.as_ref().unwrap() != &current_hash {
             // Data has changed, send a notification to Slack
             let message = format!("Endpoints have changed: {:?}", current_data);
-            post_to_slack(&config.slack.webhook_url, &message).await;
+            
+            match slack_send_message(&config.slack.api_token, &message).await {
+                Ok(_) => println!("Message sent to Slack"),
+                Err(e) => eprintln!("Failed to send message to Slack: {}", e),
+            };
 
             // Update the last_hash with the current one
             last_hash = Some(current_hash);
